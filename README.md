@@ -1,10 +1,11 @@
-# Database Backup & Restore (SQLite, MySQL, PostgreSQL)
+# Database Backup & Restore (SQLite, MySQL, PostgreSQL, MSSQL)
 
 A Python-based backup & restore system supporting:
 
 - SQLite
 - MySQL / MariaDB
 - PostgreSQL
+- Microsoft SQL Server
 - Multiple instances
 - Docker & non-Docker databases
 - Per-database backups (even when backing up “all databases”)
@@ -54,15 +55,27 @@ Designed for self-hosted servers, NAS (tested on Synology), and Docker environme
   backups/postgresql/<instance>/<timestamp>/<database>.dump
   ```
 
+### Microsoft SQL Server
+- Supports:
+  - Docker container databases
+  - Remote TCP databases (via Docker image)
+- Per-database backups even when backing up all DBs
+- Silent (no password warnings)
+- Folder structure:
+  ```
+  backups/mssql/<instance>/<timestamp>/<database>.bak
+  ```
+
 ## Requirements
 
 ### System
 - Python **3.8+**
 - Docker (required for `tcp_docker` mode)
 - Installed locally OR available in Docker:
-  - `sqlite3`
-  - `mysqldump`
-  - `pg_dump`
+  - `sqlite3` for SQLite
+  - `mysqldump` for MySQL/MariaDB
+  - `pg_dump` for PostgreSQL
+  - `sqlcmd` for MSSQL
 
 ### Python packages
 ```bash
@@ -127,9 +140,26 @@ postgresql:
       databases: []   # empty = backup ALL databases separately
 ```
 
+### MySQL / MariaDB example
+```yaml
+mssql:
+  enabled: true
+  instances:
+    - name: ryzen9-mssql
+      mode: tcp_docker
+      host: 192.168.1.5
+      port: 1433
+      user: root
+      password: secret
+      image: mcr.microsoft.com/mssql-tools
+      databases:
+        - sales
+        - inventory
+```
+
 ## Connection / Backup Modes
 
-Each MySQL and PostgreSQL instance must define a `mode` that determines how the backup and restore process connects to the database.
+Each MySQL, PostgreSQL, and MSSQL instance must define a `mode` that determines how the backup and restore process connects to the database.
 
 ### `docker` mode
 
@@ -151,6 +181,7 @@ docker_container: mariadb
 How it works:
 - MySQL: docker exec <container> mysqldump
 - PostgreSQL: docker exec <container> pg_dump
+- MSSQL: docker exec <container> sqlcmd
 
 ### `tcp_docker` mode (recommended for remote databases)
 
@@ -230,11 +261,17 @@ backups/
 │           ├── romm.sql.gz
 │           └── paperless.sql.gz
 │
-└── postgresql/
-    └── ryzen9-postgresql/
+├── postgresql/
+│   └── ryzen9-postgresql/
+│       └── 20251216_131710/
+│           ├── postgres.dump
+│           └── n8n.dump
+│
+└── mssql/
+    └── ryzen9-mssql/
         └── 20251216_131710/
-            ├── postgres.dump
-            └── n8n.dump
+            ├── sales.bak
+            └── inventory.bak
 ```
 
 ## Docker Image Compatibility (Important)

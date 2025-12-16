@@ -73,3 +73,35 @@ postgresql:
       databases:
         - appdb
         - logdb
+
+mssql:
+  enabled: true
+  instances:
+    # LOCAL DOCKER
+    - name: mssql_local
+      mode: docker
+      docker_container: mssql
+      user: backup
+      password: "secret"
+      databases: []   # empty = all databases
+
+    # TCP DOCKER
+    - name: mssql_remote
+      mode: tcp_docker
+      image: "mcr.microsoft.com/mssql-tools"
+      host: 192.168.1.50
+      port: 1433
+      user: backup
+      password: "secret"
+      databases: []   # empty = all databases
+
+    # TCP ON HOST
+    - name: mssql_remote
+      mode: tcp
+      host: 192.168.1.50
+      port: 1433
+      user: backup
+      password: "secret"
+      databases:
+        - appdb
+        - logdb

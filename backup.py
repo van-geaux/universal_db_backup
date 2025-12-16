@@ -186,7 +186,6 @@ def backup_postgresql():
 
         rotate_folders(inst_dir)
 
-
 def get_postgres_databases(inst, image):
     cmd = [
         "docker", "run", "--rm",
@@ -203,8 +202,71 @@ def get_postgres_databases(inst, image):
     result = subprocess.check_output(cmd, text=True)
     return result.splitlines()
 
+def backup_mssql():
+    if not config.get("mssql", {}).get("enabled"):
+        return
+
+    base = BACKUP_ROOT / "mssql"
+    ensure_dir(base)
+
+    for inst in config["mssql"]["instances"]:
+        inst_dir = base / inst["name"]
+        ensure_dir(inst_dir)
+
+        ts_dir = inst_dir / TIMESTAMP
+        ensure_dir(ts_dir)
+
+        image = inst.get("image", "mcr.microsoft.com/mssql-tools")
+
+        databases = inst.get("databases") or get_mssql_databases(inst, image)
+
+        for db in databases:
+            outfile = ts_dir / f"{db}.bak"
+
+            print(f"Backing up MSSQL [{inst['name']}]: {db}")
+
+            # Run BACKUP DATABASE
+            backup_cmd = [
+                "docker", "run", "--rm",
+                "-v", f"{ts_dir}:/backup",
+                image,
+                "sqlcmd",
+                "-S", f"{inst['host']},{inst.get('port', 1433)}",
+                "-U", inst["user"],
+                "-P", inst["password"],
+                "-Q", f"""
+BACKUP DATABASE [{db}]
+TO DISK = '{outfile}'
+WITH INIT
+"""
+            ]
+
+            subprocess.run(
+                backup_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True
+            )
+
+        rotate_folders(inst_dir)
+
+def get_mssql_databases(inst, image):
+    cmd = [
+        "docker", "run", "--rm",
+        image,
+        "sqlcmd",
+        "-S", f"{inst['host']},{inst.get('port', 1433)}",
+        "-U", inst["user"],
+        "-P", inst["password"],
+        "-Q", "SET NOCOUNT ON; SELECT name FROM sys.databases WHERE database_id > 4"
+    ]
+
+    result = subprocess.check_output(cmd).decode()
+    return [line.strip() for line in result.splitlines() if line.strip()]
+
 if __name__ == "__main__":
     backup_sqlite()
     backup_mysql()
     backup_postgresql()
+    backup_mssql()
     print("All database backups completed successfully")

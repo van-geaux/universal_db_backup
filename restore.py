@@ -28,10 +28,7 @@ def ensure_mysql_db(inst, dbname):
         f"-p{inst['password']}",
         "-e", f"CREATE DATABASE IF NOT EXISTS `{dbname}`;"
     ]
-
-    print(f"Ensuring MySQL database exists: {dbname}")
     subprocess.run(cmd, check=True)
-
 
 def ensure_postgres_db(inst, dbname):
     image = inst.get("image", "postgres:16")
@@ -64,14 +61,34 @@ def ensure_postgres_db(inst, dbname):
         ]
         subprocess.run(create_cmd, check=True)
 
+def ensure_mssql_db(inst, target_db):
+    image = inst.get("image", "mcr.microsoft.com/mssql-tools")
+    cmd = [
+        "docker", "run", "--rm",
+        image,
+        "sqlcmd",
+        "-S", f"{inst['host']},{inst.get('port', 1433)}",
+        "-U", inst["user"],
+        "-P", inst["password"],
+        "-Q", f"""
+IF DB_ID(N'{target_db}') IS NOT NULL
+BEGIN
+    ALTER DATABASE [{target_db}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE [{target_db}];
+END
+CREATE DATABASE [{target_db}];
+"""
+    ]
+    subprocess.run(cmd, check=True)
+
 def restore_mysql(inst, backup_file, mode, source_db=None, target_db=None):
     image = inst.get("image", "mysql:8")
 
     if mode != "single":
         raise RuntimeError("MySQL restore only supports single-db backups")
 
-    if not source_db or not target_db:
-        raise ValueError("single mode requires source_db and target_db")
+    if not target_db:
+        raise ValueError("single mode requires target_db")
 
     ensure_mysql_db(inst, target_db)
 
@@ -149,13 +166,69 @@ def restore_postgresql(inst, backup_file, mode, source_db=None, target_db=None):
 
     print("PostgreSQL restore complete")
 
+def restore_mssql(inst, backup_file, mode, source_db=None, target_db=None):
+    image = inst.get("image", "mcr.microsoft.com/mssql-tools")
+
+    if mode != "single":
+        raise RuntimeError("MSSQL restore only supports single-db backups")
+    
+    if not target_db:
+        raise ValueError("MSSQL single mode requires target_db")
+
+    print(f"Ensuring MSSQL database exists: {target_db}")
+
+    # Drop & recreate target DB
+    prepare_cmd = [
+        "docker", "run", "--rm",
+        image,
+        "sqlcmd",
+        "-S", f"{inst['host']},{inst.get('port', 1433)}",
+        "-U", inst["user"],
+        "-P", inst["password"],
+        "-Q", f"""
+IF DB_ID(N'{target_db}') IS NOT NULL
+BEGIN
+ALTER DATABASE [{target_db}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+DROP DATABASE [{target_db}];
+END
+CREATE DATABASE [{target_db}];
+"""
+    ]
+
+    subprocess.run(prepare_cmd, check=True)
+
+    backup_file = Path(backup_file).resolve()
+
+    restore_cmd = [
+        "docker", "run", "--rm",
+        "-v", f"{backup_file.parent}:/backup",
+        image,
+        "sqlcmd",
+        "-S", f"{inst['host']},{inst.get('port', 1433)}",
+        "-U", inst["user"],
+        "-P", inst["password"],
+        "-Q", f"""
+RESTORE DATABASE [{target_db}]
+FROM DISK = '/backup/{backup_file.name}'
+WITH REPLACE
+"""
+    ]
+
+    print("Running MSSQL single-db restore:")
+    print(" ", " ".join(restore_cmd))
+
+    subprocess.run(restore_cmd, check=True)
+
+    print("MSSQL restore complete")
+
 def main():
     if len(sys.argv) < 6:
         print(
             "Usage:\n"
             "  restore.py mysql <instance> <backup_file> single <source_db> <target_db>\n"
             "  restore.py postgresql <instance> <backup_file> single <source_db> <target_db>\n"
-            "  restore.py postgresql <instance> <backup_file> all - -"
+            "  restore.py postgresql <instance> <backup_file> all \n"
+            "  restore.py mssql <instance> <backup_file> single <source_db> <target_db>"
         )
         sys.exit(1)
 
@@ -172,9 +245,10 @@ def main():
         restore_mysql(inst, backup_file, mode, source_db, target_db)
     elif dbtype == "postgresql":
         restore_postgresql(inst, backup_file, mode, source_db, target_db)
+    elif dbtype == "mssql":
+        restore_mssql(inst, backup_file, mode, source_db, target_db)
     else:
         raise ValueError("Unsupported database type")
-
 
 if __name__ == "__main__":
     main()
