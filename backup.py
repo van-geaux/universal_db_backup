@@ -103,25 +103,33 @@ def backup_mysql():
                 "-P", str(inst.get("port", 3306)),
                 "-u", inst["user"],
                 f"-p{inst['password']}",
-                "--single-transaction",
-                "--quick",
-                "--routines",
-                "--events",
+                "--single-transaction", "--quick", "--routines", "--events",
                 db
             ]
 
             dump = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.PIPE,
+                text=True
             )
+
             with gzip.open(outfile, "wb") as f:
                 shutil.copyfileobj(dump.stdout, f)
 
+            stderr = dump.stderr.read()
             dump.wait()
 
-        rotate_folders(inst_dir)
+            if stderr:
+                filtered = "\n".join(
+                    line for line in stderr.splitlines()
+                    if "Using a password on the command line interface can be insecure" not in line
+                )
 
+                if filtered.strip():
+                    print(filtered)
+
+        rotate_folders(inst_dir)
 
 def get_mysql_databases(inst, image):
     cmd = [
@@ -263,6 +271,97 @@ def get_mssql_databases(inst, image):
 
     result = subprocess.check_output(cmd).decode()
     return [line.strip() for line in result.splitlines() if line.strip()]
+
+def backup_mongodb():
+    if not config.get("mongodb", {}).get("enabled"):
+        return
+
+    base = BACKUP_ROOT / "mongodb"
+    ensure_dir(base)
+
+    for inst in config["mongodb"]["instances"]:
+        inst_dir = base / inst["name"]
+        ensure_dir(inst_dir)
+
+        ts_dir = inst_dir / TIMESTAMP
+        ensure_dir(ts_dir)
+
+        image = inst.get("image", "mongo:7")
+
+        databases = inst.get("databases") or get_mongodb_databases(inst, image)
+
+        for db in databases:
+            outfile = ts_dir / f"{db}.archive.gz"
+
+            print(f"Backing up MongoDB [{inst['name']}]: {db}")
+
+            cmd = [
+                "docker", "run", "--rm",
+                image,
+                "mongodump",
+                "--host", inst["host"],
+                "--port", str(inst.get("port", 27017)),
+                "--db", db,
+                "--archive",
+                "--gzip"
+            ]
+
+            if inst.get("user"):
+                cmd.extend([
+                    "--username", inst["user"],
+                    "--password", inst["password"],
+                    "--authenticationDatabase",
+                    inst.get("auth_db", "admin")
+                ])
+
+            dump = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+
+            with open(outfile, "wb") as f:
+                shutil.copyfileobj(dump.stdout, f)
+
+            stderr = dump.stderr.read().decode()
+            dump.wait()
+
+            if stderr.strip():
+                print(stderr)
+
+        rotate_folders(inst_dir)
+
+def get_mongodb_databases(inst, image):
+    cmd = [
+        "docker", "run", "--rm",
+        image,
+        "mongosh",
+        "--quiet",
+        "--host", inst["host"],
+        "--port", str(inst.get("port", 27017)),
+        "--eval",
+        "db.adminCommand('listDatabases').databases.map(d => d.name).join('\\n')"
+    ]
+
+    if inst.get("user"):
+        cmd.extend([
+            "-u", inst["user"],
+            "-p", inst["password"],
+            "--authenticationDatabase",
+            inst.get("auth_db", "admin")
+        ])
+
+    result = subprocess.check_output(
+        cmd,
+        text=True,
+        stderr=subprocess.DEVNULL
+    )
+
+    dbs = [
+        d for d in result.splitlines()
+        if d not in ("admin", "local", "config")
+    ]
+    return dbs
 
 if __name__ == "__main__":
     backup_sqlite()

@@ -2,16 +2,19 @@
 
 A Python-based backup & restore system supporting:
 
-- SQLite
-- MySQL / MariaDB
-- PostgreSQL
-- Microsoft SQL Server
 - Multiple instances
 - Docker & non-Docker databases
 - Per-database backups (even when backing up “all databases”)
 - Safe online backups
 - Configurable retention
 - Restore to same or different database names
+
+Supported engines:
+- SQLite
+- MySQL / MariaDB
+- PostgreSQL
+- Microsoft SQL Server
+- MongoDB
 
 Designed for self-hosted servers, NAS (tested on Synology), and Docker environments.
 
@@ -64,6 +67,18 @@ Designed for self-hosted servers, NAS (tested on Synology), and Docker environme
 - Folder structure:
   ```
   backups/mssql/<instance>/<timestamp>/<database>.bak
+  ```
+
+### MongoDB
+- Supports:
+  - Docker container databases
+  - Remote TCP databases (via Docker image)
+- Per-database backups even when backing up all DBs
+- Gzipped backups
+- Silent (no password warnings)
+- Folder structure:
+  ```
+  backups/mongodb/<instance>/<timestamp>/<database>.archive.gz
   ```
 
 ## Requirements
@@ -157,9 +172,26 @@ mssql:
         - inventory
 ```
 
+### MongoDB example
+```yaml
+mysql:
+  enabled: true
+  instances:
+    - name: ryzen9-mongodb
+      mode: tcp_docker
+      host: 192.168.1.5
+      port: 27017
+      user: root
+      password: secret
+      image: mongo:7
+      databases:
+        - sales
+        - inventory
+```
+
 ## Connection / Backup Modes
 
-Each MySQL, PostgreSQL, and MSSQL instance must define a `mode` that determines how the backup and restore process connects to the database.
+Each MySQL, PostgreSQL, MSSQL, and MongoDB instance must define a `mode` that determines how the backup and restore process connects to the database.
 
 ### `docker` mode
 
@@ -267,11 +299,17 @@ backups/
 │           ├── postgres.dump
 │           └── n8n.dump
 │
-└── mssql/
-    └── ryzen9-mssql/
+├── mssql/
+│   └── ryzen9-mssql/
+│       └── 20251216_131710/
+│           ├── sales.bak
+│           └── inventory.bak
+│
+└── mongodb/
+    └── ryzen9-mongodb/
         └── 20251216_131710/
-            ├── sales.bak
-            └── inventory.bak
+            ├── sales.archive.gz
+            └── inventory.archive.gz
 ```
 
 ## Docker Image Compatibility (Important)
@@ -314,7 +352,9 @@ If exact matching is not possible:
 - Test restore on a non-production database first
 
 ## TODO
+- [ ] Refactor codes for restore mode
 - [ ] Logging/log file
+- [ ] Move engines backup/restore modes as modules
 - [ ] Create a docker image with cron scheduling
 - [ ] Create a UI
 
