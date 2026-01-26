@@ -49,25 +49,44 @@ def backup_sqlite():
     base = BACKUP_ROOT / "sqlite"
     ensure_dir(base)
 
+
     for inst in config["sqlite"]["instances"]:
+        mode = inst["mode"]
+
         inst_dir = base / inst["name"]
         ensure_dir(inst_dir)
 
         db_path = inst["path"]
+        name = inst["name"]
 
-        outfile = inst_dir / f"{inst['name']}_{TIMESTAMP}.sql.gz"
+        print(f"Backing up SQLite {name} (mode={mode})")
 
-        print(f"Backing up SQLite {inst['name']}")
+        tmp_db = inst_dir / f"{name}_{TIMESTAMP}.db"
 
-        dump = subprocess.Popen(
-            ["sqlite3", db_path, ".dump"],
-            stdout=subprocess.PIPE
+        subprocess.run(
+            ["sqlite3", db_path, f".backup '{tmp_db}'"],
+            check=True
         )
 
-        with gzip.open(outfile, "wb") as f:
-            shutil.copyfileobj(dump.stdout, f)
+        # if mode == "dump":
+        #     outfile = inst_dir / f"{name}_{TIMESTAMP}.sql.gz"
 
-        dump.wait()
+        #     dump = subprocess.Popen(
+        #         ["sqlite3", tmp_db, ".dump"],
+        #         stdout=subprocess.PIPE
+        #     )
+
+        #     with gzip.open(outfile, "wb") as f:
+        #         shutil.copyfileobj(dump.stdout, f)
+
+        #     dump.wait()
+
+        # else:
+        outfile = inst_dir / f"{name}_{TIMESTAMP}.db.gz"
+        with open(tmp_db, "rb") as f_in, gzip.open(outfile, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+
+        tmp_db.unlink(missing_ok=True)
 
         rotate_files(inst_dir)
 

@@ -1,3 +1,12 @@
+# Project Status
+
+I started this project because I couldn’t find a tool that really fit what I needed back then.
+
+Recently, I found a tool that does exactly what I was trying to build and much much better than what I could have build myself:
+https://github.com/David-Crty/databasement
+
+Because of that, I’m parking this project for now. I’m keeping the repo public in case it’s useful to others or if I decide to revisit it later.
+
 # Database Backup & Restore (SQLite, MySQL, PostgreSQL, MSSQL)
 
 A Python-based backup & restore system supporting:
